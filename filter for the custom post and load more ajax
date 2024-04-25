@@ -1,0 +1,254 @@
+
+
+wp_enqueue_style( 'style', get_stylesheet_uri() );
+
+
+add_action( 'init', 'twentytwentyfour_pattern_categories' );
+function my_scripts_method() {
+    wp_register_script('jquery', 'https://code.jquery.com/jquery-3.6.0.min.js', array(), null, true);
+    wp_enqueue_script('jquery');
+}
+
+add_action('wp_enqueue_scripts', 'my_scripts_method');
+
+function create_post_type() {
+    $labels = array(
+        'name' => 'Dealers',
+        'singular_name' => 'Dealer',
+        'menu_name' => 'Dealers',
+        'name_admin_bar' => 'Dealer',
+        'add_new' => 'Add New',
+        'add_new_item' => 'Add New Dealer',
+        'new_item' => 'New Dealer',
+        'edit_item' => 'Edit Dealer',
+        'view_item' => 'View Dealer',
+        'all_items' => 'All Dealers',
+        'search_items' => 'Search Dealers',
+        'parent_item_colon' => 'Parent Dealers:',
+        'not_found' => 'No dealers found.',
+        'not_found_in_trash' => 'No dealers found in Trash.'
+    );
+
+    $args = array(
+        'labels' => $labels,
+        'description' => 'Description.',
+        'public' => true,
+        'publicly_queryable' => true,
+        'show_ui' => true,
+        'show_in_menu' => true,
+        'query_var' => true,
+        'rewrite' => array('slug' => 'dealers'),
+        'capability_type' => 'post',
+        'has_archive' => true,
+        'hierarchical' => false,
+        'menu_position' => null,
+        'supports' => array('title', 'thumbnail'),
+        'taxonomies' => array('category')
+    );
+
+    register_post_type('dealers', $args);
+}
+add_action('init', 'create_post_type');
+
+function enqueue_custom_scripts() {
+    wp_enqueue_script('custom-script', get_stylesheet_directory_uri() . '/custom.js', array('jquery'), null, true);
+    wp_localize_script('custom-script', 'ajax_object', array('ajax_url' => admin_url('admin-ajax.php')));
+}
+add_action('wp_enqueue_scripts', 'enqueue_custom_scripts');
+
+function custom_dealers_shortcode() {
+    ob_start(); ?>
+
+    <form id="category-filter-form">
+        <?php
+        $args = array(
+            'taxonomy' => 'category',
+            'hide_empty' => true,
+            'orderby' => 'name',
+            'order' => 'ASC'
+        );
+        $cats = get_categories($args);
+        ?>
+            <select name="category_filter" id="category-filter">
+                <option value="">Select Category</option>
+                <?php foreach ($cats as $cat) : ?>
+                    <option value="<?php echo esc_attr($cat->term_id); ?>">
+                        <?php echo esc_html($cat->name); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <input type="hidden" name="paged" id="paged" value="1">
+            <button type="submit">Filter</button>
+    </form>
+    <div id="dealers-container"></div>
+    <button id="load-more">Load More</button>
+
+    <script>
+       jQuery(document).ready(function($) {
+    var category_id; // Define category_id outside functions
+
+    $('#category-filter-form').submit(function(e) {
+        e.preventDefault();
+        category_id = $('#category-filter').val();
+        var paged = 1; // Reset page to 1 for fresh filter
+        loadPosts(category_id, paged);
+    });
+
+    $('#load-more').on('click', function() {
+        var paged = parseInt($('#paged').val()) + 1;
+        loadPosts(category_id, paged);
+    });
+
+    function loadPosts(category, page) {
+        var data = {
+            'action': 'load_dealers_by_category',
+            'category_id': category,
+            'page': page
+        };
+
+        $.post(ajax_object.ajax_url, data, function(response) {
+            if (page == 1) {
+                $('#dealers-container').html(response);
+            } else {
+                $('#dealers-container').append(response);
+            }
+            $('#paged').val(page);
+        });
+    }
+});
+
+
+//        $('#load-more').on('click', function() {
+//         var paged = parseInt($('#paged').val()) + 1;
+//         loadPosts(category_id, paged);
+//     });
+
+//     function loadPosts(category, page) {
+//         var data = {
+//             'action': 'load_dealers_by_category',
+//             'category_id': category,
+//             'page': page
+//         };
+
+//         $.post(ajax_object.ajax_url, data, function(response) {
+//             if (page == 1) {
+//                 $('#dealers-container').html(response);
+//             } else {
+//                 $('#dealers-container').append(response);
+//             }
+//             $('#paged').val(page);
+//         });
+//     }
+// });
+
+    </script>
+<?php
+    $output = ob_get_clean();
+    return $output;
+}
+add_shortcode('custom_dealers', 'custom_dealers_shortcode');
+
+function load_dealers_by_category() {
+    $category_id = $_POST['category_id'];
+    $page = $_POST['page'];
+
+    $args = array(
+        'post_type' => 'dealers',
+        'posts_per_page' => 4,
+        'paged' => $page,
+        'tax_query' => array(
+            array(
+                'taxonomy' => 'category',
+                'field' => 'id',
+                'terms' => $category_id,
+            ),
+        ),
+    );
+
+    $dealers_query = new WP_Query($args);
+
+    if ($dealers_query->have_posts()) :
+        while ($dealers_query->have_posts()) : $dealers_query->the_post();
+            ?>
+            <div class="dealer-item">
+                <h2><?php the_title(); ?></h2>
+                <div class="dealer-thumbnail">
+                    <?php the_post_thumbnail('medium'); ?>
+                </div>
+            </div>
+            <?php
+        endwhile;
+        wp_reset_postdata();
+    else :
+        echo 'No products found.';
+    endif;
+
+    wp_die();
+}
+add_action('wp_ajax_load_dealers_by_category', 'load_dealers_by_category');
+add_action('wp_ajax_nopriv_load_dealers_by_category', 'load_dealers_by_category');
+
+?>
+
+
+
+
+/* Style for the select dropdown */
+#category-filter {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-right: 10px;
+   
+    margin-left: 200px;
+}
+
+/* Style for the submit button */
+#category-filter-form button[type="submit"] {
+    padding: 8px 12px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Style for the Load More button */
+#load-more {
+    margin-top: 50px;
+    padding: 8px 12px;
+    background-color: #28a745;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+   margin-left: 50% !important;
+ 
+}
+
+/* Hover effect for buttons */
+button:hover, #load-more:hover {
+    opacity: 0.8;
+}
+
+
+
+#dealers-container {
+        margin: 10PX;
+    max-width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-end;
+    justify-content: center;
+    align-items: center;
+}
+
+.dealer-item {
+    width: 25%;
+text-align: center;
+   
+}
+
+h2{
+font-size:26px !important;
+}
