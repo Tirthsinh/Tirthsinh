@@ -1,0 +1,227 @@
+<?php
+/* Template Name: pac */
+get_header();
+echo get_field('champs_abonnement');
+// Check if a user is logged in
+if (is_user_logged_in()) {
+    $current_user = wp_get_current_user();
+    $current_email = $current_user->user_email;
+
+    // Either retrieve token from cache or regenerate a new token
+    $token = wp_cache_get("ntx_token");
+
+    if (!$token) {
+        // Token was not in cache, regenerate it from calling the auth endpoint
+        $request = wp_remote_post("https://ntx.neurotracker.net/authenticate", [
+            "method" => "POST",
+            "headers" => [
+                "Content-Type" => "application/x-www-form-urlencoded",
+            ],
+            "body" => [
+                "grant_type" => "password",
+                "UserName" => "centrepacadmin",
+                "Password" => "9bd922c0b57718cace5a859faccda0587e3703ee",
+                "ApiKey" => "nrid96G4XcBrR9aUyrqiuUt7adUtUReh",
+            ],
+        ]);
+
+        if (is_wp_error($request) || wp_remote_retrieve_response_code($request) != 200) {
+            error_log(print_r($request, true));
+        }
+
+        $body = wp_remote_retrieve_body($request);
+        $decoded_response = json_decode($body, true);
+        $token = $decoded_response['access_token'];
+
+        // Store token in cache
+        wp_cache_set("ntx_token", $token, '', 60 * 60 * 4); // 3 hours expiration
+    }
+
+    // Call the function to get user session data for the current user only
+    get_user_session_data($token, array($current_email));
+} else {
+    echo 'User not logged in.';
+}
+
+function get_user_session_data($token, $emails) {
+    
+    $api_url = 'https://ntx.neurotracker.net/request';
+    $endpoint = 'public/GetUserSessionData';
+
+   
+    echo '<style>';
+    echo '
+    @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600&display=swap");
+
+.page-template-pac .bb-grid {
+  display: block;}
+
+    .tracker-box {
+        padding-top: 30px;
+        font-family: "Oswald", sans-serif;
+        height: auto;
+        width: 100%;
+        text-align: center;
+    }
+
+    .tracker-box ul {
+        margin: 0px;
+        padding: 0px;
+        display: grid;
+        margin-top: 20px;
+        grid-template-columns: auto auto;
+        justify-content: center;
+    }
+
+    .tracker-box ul li {
+        font-size: 22px;
+        list-style: none;
+        height: fit-content;
+        background: #7abcd4;
+        color: #0c435e;
+        margin: 15px;
+        height:220px;
+        width:220px;
+        border-radius: 30px;
+        padding: 20px;
+        vertical-align: middle;
+        line-height: 22px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+        align-content: center;
+    }
+
+    .dark-color {
+        background-color: #0c445d !important;
+        color: #fff !important;
+    }
+
+    .tracker-box ul li span {
+        font-size: 60px;
+        display: block;
+        line-height: 70px;
+        padding-top: 15px;
+    }
+
+    @media (max-width:450px) {
+    
+    .tracker-box ul {
+    margin: 0px;
+    padding: 0px;
+       display: flex !important;
+    flex-wrap: wrap;}
+    
+    .tracker-box ul li {
+    max-width: 100%;
+      width:43%;
+    margin: 20px 10px;
+    }
+    .tracker-box ul li span {
+    font-size: 50px;}
+    
+    .tracker-box ul li {
+    font-size: 18px;
+    padding: 5px;}
+
+    
+    .tracker-box ul li {max-width: 100%;}
+        // .tracker-box ul {
+        //     display: block !important;
+        // }
+
+        // .tracker-box ul li {
+        //     height: 200px;
+        //     width: 200px;
+        //     margin-left: auto;
+        //     margin-right: auto;
+        // }
+        
+   
+    }';
+    
+     
+    echo '</style>';
+
+    foreach ($emails as $email) {
+        
+        $url = "{$api_url}?api={$endpoint}&email={$email}";
+
+        
+        $headers = array(
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type' => 'application/json',
+        );
+
+   
+        $response = wp_remote_get($url, array('headers' => $headers));
+
+        
+        if (!is_wp_error($response)) {
+            
+            $body = wp_remote_retrieve_body($response);
+            $user_data = json_decode($body, true);
+
+            
+            if (isset($user_data['Data']['InitialBaseline']) &&
+                isset($user_data['Data']['FinalBaseline']) &&
+                isset($user_data['Data']['Improvement']) &&
+                isset($user_data['Data']['SessionCount']) &&
+                isset($user_data['Data']['BestScore']) &&
+                isset($user_data['Data']['LatestScore'])) {
+
+                
+                echo '<div class="tracker-box">';
+                echo '<img src="https://thebetashow.com/pac/wp-content/uploads/2023/11/neurotracker-logo.png">';
+                echo "<div class='mail-in'><b>Email: $email</b></div>";
+
+                echo '<ul>';
+                $improvementPercentage = $user_data['Data']['Improvement'] * 100;
+                echo "<li class='dark-color'>Amélioration: <span>{$improvementPercentage}%</span></li>";
+                echo "<li class='dark-color'>Dernière séance: <span>" . substr($user_data['Data']['LatestScore'], 0, -3) . "</span></li>";
+                echo "<li>Baseline actuel: <span>{$user_data['Data']['FinalBaseline']}</span></li>";
+                echo "<li>Meilleure séance: <span>" . substr($user_data['Data']['BestScore'], 0, -3) . "</span></li>";
+                echo "<li>Baseline initial: <span>{$user_data['Data']['InitialBaseline']}</span></li>";
+                echo "<li>Nombre de séances complètées: <span>{$user_data['Data']['SessionCount']}</span></li>";
+                echo "<br>";
+                echo '</ul>';
+                echo '</div>';
+            } else {
+                
+				 echo $validdation = get_field('email_text'). $email;
+				 echo $descrption = get_field('pac_discription');
+				
+				$link = get_field('button');
+if ($link) :
+    $link_url = $link['url'];
+    $link_title = $link['title'];
+    $link_target = $link['target'] ? $link['target'] : '_self';
+    ?>
+    <a class="button pac_btn" href="<?php echo esc_url($link_url); ?>" target="<?php echo esc_attr($link_target); ?>"><?php echo esc_html($link_title);?></a>
+<?php endif;
+   //echo "Invalid or incomplete data for email: $email<br><br>";
+            }
+        } else {
+            
+            echo "Error fetching data for email: $email - " . $response->get_error_message() . "<br><br>";
+        }
+    }
+}
+
+
+?>
+
+
+<?php
+
+  echo do_shortcode("[elementor-template id='1802']");
+
+?>
+	<?php
+get_footer();
+?>
+
+
+
+
